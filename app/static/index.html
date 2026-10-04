@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#000000" />
+  <meta name="format-detection" content="telephone=no" />
+  <link rel="manifest" href="/static/manifest.webmanifest?v=edge2" />
+  <link rel="apple-touch-icon" href="/static/icon-180.png?v=edge2" />
+  <title>RC10</title>
+  <link rel="stylesheet" href="/static/style.css?v=folderqr1" />
+</head>
+<body>
+  <main class="app">
+    <canvas id="cameraFeed" class="camera-feed" aria-label="Камера"></canvas>
+    <div class="shade"></div>
+
+    <div id="startCountdown" class="start-countdown hidden" aria-live="polite">5</div>
+
+    <div id="appHiddenWarning" class="app-hidden-warning hidden" aria-live="assertive">
+      <div class="app-hidden-card">
+        <div class="app-hidden-title">Приложение было свёрнуто</div>
+        <div class="app-hidden-subtitle">Съёмка на ноутбуке продолжает выполняться.</div>
+        <button id="dismissHiddenWarning" class="app-hidden-button" type="button">Продолжить</button>
+      </div>
+    </div>
+
+    <div id="saveStatus" class="save-status hidden" aria-live="polite">
+      <div class="save-spinner"></div>
+      <div id="saveStatusText">Видео сохраняется…</div>
+    </div>
+
+    <section class="controls">
+      <div class="mode-selector" id="modeSelector" aria-label="Траектория"></div>
+      <button id="captureButton" class="capture-button" type="button" aria-label="Начать съёмку">
+        <span></span>
+      </button>
+    </section>
+
+    <section class="qr-overlay hidden" id="qrOverlay">
+      <div class="qr-card">
+        <img id="qrImage" class="qr-image" alt="QR-код" />
+        <div class="qr-countdown" id="qrCountdown">30</div>
+        <button id="newVideoButton" class="new-video-button" type="button">Новое видео</button>
+      </div>
+    </section>
+
+    <div class="toast hidden" id="toast"></div>
+  </main>
+  <script src="/static/app.js?v=folderqr1"></script>
+</body>
+</html>

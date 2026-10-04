@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>RC10</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+
+<body>
+  <main class="app">
+    <iframe
+      id="cameraFeed"
+      class="camera-feed"
+      src="http://192.168.137.40:8889/cam?autoplay=true&muted=true&controls=false"
+      title="Камера"
+      scrolling="no"
+      allow="autoplay; fullscreen"
+    ></iframe>
+
+    <div class="shade"></div>
+
+    <section class="controls">
+      <div class="mode-selector" id="modeSelector">
+        <button class="mode-btn active" data-trajectory="demo.json">Точка 1</button>
+        <button class="mode-btn" data-trajectory="demo.json">Точка 2</button>
+        <button class="mode-btn" data-trajectory="demo.json">Точка 3</button>
+        <button class="mode-btn" data-trajectory="demo.json">Точка 4</button>
+      </div>
+
+      <button
+        id="captureButton"
+        class="capture-button"
+        type="button"
+        aria-label="Начать съёмку"
+      >
+        <span></span>
+      </button>
+    </section>
+
+    <section class="qr-overlay hidden" id="qrOverlay">
+      <div class="qr-card">
+        <img id="qrImage" class="qr-image" alt="QR-код" />
+        <a id="videoLink" class="video-link" href="#" target="_blank" rel="noopener">
+          Открыть видео
+        </a>
+        <button id="newVideoButton" class="new-video-button" type="button">
+          Новое видео
+        </button>
+      </div>
+    </section>
+
+    <div class="toast hidden" id="toast"></div>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

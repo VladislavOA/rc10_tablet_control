@@ -1,0 +1,16 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+opencv-python==4.10.0.84
+pydantic==2.10.4
+qrcode[pil]==8.2
+requests==2.32.5
+# Core runtime dependencies for rc10_api
+numpy==2.4.0
+scipy==1.16.3
+pyserial>=3.5
+
+# Optional extras
+# pygame>=2.5.0  # required only for PS4Joystick
+# py3dcnx        # required only for SpaceMouseWrapper
+# tkinter / python3-tk must be installed from the OS package manager on Linux
+#   sudo apt-get install python3-tk
