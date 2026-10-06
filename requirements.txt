@@ -5,8 +5,8 @@ pydantic==2.10.4
 qrcode[pil]==8.2
 requests==2.32.5
 # Core runtime dependencies for rc10_api
-numpy==2.4.0
-scipy==1.16.3
+numpy
+scipy
 pyserial>=3.5
 
 # Optional extras

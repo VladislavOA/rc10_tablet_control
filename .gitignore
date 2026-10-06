@@ -6,3 +6,4 @@ google_token.json
 data/videos/*
 data/cloud_cache/*
 data/share_tokens.json
+venv/

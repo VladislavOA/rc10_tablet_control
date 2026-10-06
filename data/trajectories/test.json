@@ -67,5 +67,13 @@
         135.968449
       ]
     }
+  ],
+  "video_speed_intervals": [
+    {
+      "start": 1,
+      "end": 5,
+      "start_speed": 2.0,
+      "end_speed": 0.5
+    }
   ]
 }
