@@ -3,6 +3,7 @@
 import subprocess
 import sys
 from pathlib import Path
+from typing import Callable, Optional
 
 
 BASE_DIR = Path(__file__).resolve().parents[2]
@@ -23,6 +24,8 @@ def execute_manipulator_trajectory(
     rot_step: float = 2.0,
     window: int = 5,
     loops: int = 1,
+    on_motion_ready: Optional[Callable[[], None]] = None,
+    wait_for_motion_start: Optional[Callable[[], bool]] = None,
 ) -> bool:
 
     json_path = Path(json_name).expanduser()
@@ -61,9 +64,35 @@ def execute_manipulator_trajectory(
         "--yes",
     ]
 
+    if on_motion_ready and wait_for_motion_start:
+        cmd.append("--start-gate")
+
     try:
-        result = subprocess.run(cmd, cwd=BASE_DIR)
-        return result.returncode == 0
+        if not (on_motion_ready and wait_for_motion_start):
+            result = subprocess.run(cmd, cwd=BASE_DIR)
+            return result.returncode == 0
+
+        process = subprocess.Popen(
+            cmd,
+            cwd=BASE_DIR,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        assert process.stdout is not None
+        assert process.stdin is not None
+        for line in process.stdout:
+            print(line, end="", flush=True)
+            if line.strip() == "RC10_MOTION_READY":
+                on_motion_ready()
+                if not wait_for_motion_start():
+                    process.terminate()
+                    break
+                process.stdin.write("GO\n")
+                process.stdin.flush()
+        return process.wait() == 0
 
     except KeyboardInterrupt:
         print("Остановлено пользователем.")
@@ -75,7 +104,7 @@ def execute_manipulator_trajectory(
 
 
 if __name__ == "__main__":
-    success = execute_manipulator_trajectory("arab3.json")
+    success = execute_manipulator_trajectory("")
 
     if success:
         print("Программа робота успешно завершена.")

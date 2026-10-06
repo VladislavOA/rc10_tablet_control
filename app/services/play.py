@@ -14,6 +14,7 @@ play.py — плавное воспроизведение программы RC1
 import argparse
 import json
 import math
+import sys
 import time
 from pathlib import Path
 
@@ -194,6 +195,11 @@ def move_to_first_point(robot, first, args):
         f"макс. поворот сустава {jump:.1f}°"
     )
 
+    if args.start_gate:
+        print("RC10_MOTION_READY", flush=True)
+        if sys.stdin.readline().strip() != "GO":
+            raise RuntimeError("Запуск движения отменён")
+
     robot.motion.joint.add_new_waypoint(
         angle_pose=first["joints_deg"],
         speed=args.joint_speed,
@@ -262,6 +268,7 @@ def main():
     ap.add_argument("--loops", type=int, default=1)
     ap.add_argument("--yes", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--start-gate", action="store_true")
 
     args = ap.parse_args()
 

@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "name": "Video speed ramp test fixture",
+  "units": {
+    "joints": "deg",
+    "xyz": "m",
+    "rpy": "deg"
+  },
+  "steps": [
+    {
+      "type": "wait",
+      "seconds": 5
+    }
+  ],
+  "video_speed_intervals": [
+    {
+      "start": 1,
+      "end": 4,
+      "start_speed": 0.5,
+      "end_speed": 2.0
+    }
+  ]
+}

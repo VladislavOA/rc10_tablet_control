@@ -33,6 +33,7 @@ from .config import (
 from .services.camera import CameraRecorder
 from .services.manipulator import execute_manipulator_trajectory
 from .services.session import SessionManager
+from .services.video_postprocess import load_speed_intervals
 from .services.yandex_disk import YandexDiskClient
 
 app = FastAPI(title="RC10 Tablet Control", version="6.0.0")
@@ -111,8 +112,11 @@ def start_session(body: StartRequest):
     if trajectory.parent != TRAJECTORY_DIR.resolve() or not trajectory.exists():
         raise HTTPException(404, "Траектория не найдена")
     try:
-        session_id = session.start(trajectory)
+        speed_intervals = load_speed_intervals(trajectory)
+        session_id = session.start(trajectory, speed_intervals)
         return {"ok": True, "session_id": session_id, "session": session.status()}
+    except ValueError as exc:
+        raise HTTPException(400, f"Неверные настройки видео траектории: {exc}")
     except Exception as exc:
         raise HTTPException(409, str(exc))
 

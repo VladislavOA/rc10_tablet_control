@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import queue
 import threading
 import time
 from datetime import datetime
@@ -47,6 +48,10 @@ class CameraRecorder:
 
         self._cap = None
         self._writer = None
+        self._record_queue: Optional[queue.Queue] = None
+        self._writer_thread: Optional[threading.Thread] = None
+        self._writer_error: Optional[str] = None
+        self._dropped_record_batches = 0
         self._recording = False
         self._thread: Optional[threading.Thread] = None
         self._stop = threading.Event()
@@ -157,7 +162,7 @@ class CameraRecorder:
             now = time.monotonic()
             with self._lock:
                 self._latest_frame = frame
-                writer = self._writer
+                record_queue = self._record_queue
                 recording = self._recording
                 started_at = self._record_started_at
 
@@ -169,16 +174,49 @@ class CameraRecorder:
                 self._encode_preview(frame)
                 next_preview_at = now + preview_interval
 
-            if recording and writer is not None and started_at is not None:
+            if recording and record_queue is not None and started_at is not None:
                 elapsed = max(0.0, now - started_at)
                 target_frames = int(elapsed * self.fps) + 1
                 with self._lock:
+                    if not self._recording or self._record_queue is not record_queue:
+                        continue
                     missing = target_frames - self._written_frames
                     if missing > 0:
                         missing = min(missing, max(int(self.fps * 2), 1))
-                        for _ in range(missing):
-                            writer.write(frame)
-                            self._written_frames += 1
+                        try:
+                            record_queue.put_nowait((frame.copy(), missing))
+                        except queue.Full:
+                            try:
+                                _, dropped_repeats = record_queue.get_nowait()
+                                missing += dropped_repeats
+                            except queue.Empty:
+                                pass
+                            try:
+                                record_queue.put_nowait((frame.copy(), missing))
+                            except queue.Full:
+                                self._dropped_record_batches += 1
+                            else:
+                                self._written_frames += missing
+                                self._dropped_record_batches += 1
+                        else:
+                            self._written_frames += missing
+
+    def _write_recording(self, writer, record_queue: queue.Queue) -> None:
+        try:
+            while True:
+                item = record_queue.get()
+                if item is None:
+                    break
+                frame, repeat_count = item
+                for _ in range(repeat_count):
+                    writer.write(frame)
+        except Exception as exc:
+            with self._lock:
+                self._writer_error = str(exc)
+            while record_queue.get() is not None:
+                pass
+        finally:
+            writer.release()
 
 
     def preview_client_connected(self):
@@ -217,11 +255,20 @@ class CameraRecorder:
 
         with self._lock:
             self._writer = writer
+            self._record_queue = queue.Queue(maxsize=max(4, min(16, int(self.fps * 0.5))))
+            self._writer_error = None
+            self._dropped_record_batches = 0
             self._recording = True
             self._last_file = final_path
             self._temp_file = temp_path
             self._record_started_at = time.monotonic()
             self._written_frames = 0
+            self._writer_thread = threading.Thread(
+                target=self._write_recording,
+                args=(writer, self._record_queue),
+                daemon=True,
+            )
+            self._writer_thread.start()
         return final_path
 
     def _finalize_mp4(self, temp_path: Path, final_path: Path) -> None:
@@ -252,13 +299,25 @@ class CameraRecorder:
             self._recording = False
             writer = self._writer
             self._writer = None
+            record_queue = self._record_queue
+            self._record_queue = None
+            writer_thread = self._writer_thread
+            self._writer_thread = None
             final_path = self._last_file
             temp_path = self._temp_file
             self._temp_file = None
             self._record_started_at = None
 
-        if writer is not None:
+        if writer is not None and record_queue is not None and writer_thread is not None:
+            record_queue.put(None)
+            writer_thread.join()
+        elif writer is not None:
             writer.release()
+
+        with self._lock:
+            writer_error = self._writer_error
+        if writer_error:
+            raise RuntimeError(f"Ошибка записи видео: {writer_error}")
 
         if final_path and temp_path and temp_path.exists():
             self._finalize_mp4(temp_path, final_path)
@@ -266,10 +325,14 @@ class CameraRecorder:
 
     def status(self) -> dict:
         cap_ok = bool(self._cap is not None and self._cap.isOpened())
+        record_queue_size = self._record_queue.qsize() if self._record_queue is not None else 0
         return {
             "source": str(self.source),
             "available": cap_ok,
             "recording": self._recording,
+            "record_queue_size": record_queue_size,
+            "dropped_record_batches": self._dropped_record_batches,
+            "writer_error": self._writer_error,
             "preview": {
                 "width": self.preview_width,
                 "height": self.preview_height,

@@ -12,8 +12,6 @@ const state = {
   pollTimer: null,
   resetTimer: null,
   qrCountdownTimer: null,
-  pendingCountdownTimer: null,
-  pendingCountdownDeadline: null,
 };
 
 const modeSelector = document.getElementById("modeSelector");
@@ -181,48 +179,15 @@ async function loadTrajectories() {
   });
 }
 
-function stopPendingCountdown() {
-  if (state.pendingCountdownTimer) {
-    clearInterval(state.pendingCountdownTimer);
-    state.pendingCountdownTimer = null;
-  }
-  state.pendingCountdownDeadline = null;
-}
-
-function renderPendingCountdown() {
-  if (!state.pendingCountdownDeadline) return;
-  const remainingMs = state.pendingCountdownDeadline - performance.now();
-  const value = Math.max(1, Math.ceil(remainingMs / 1000));
-  if (startCountdown.textContent !== String(value)) {
-    startCountdown.textContent = String(value);
-  }
-  startCountdown.classList.remove("hidden");
-}
-
-function startPendingCountdown(seconds = 5) {
-  stopPendingCountdown();
-  state.pendingCountdownDeadline = performance.now() + seconds * 1000;
-  renderPendingCountdown();
-  state.pendingCountdownTimer = setInterval(renderPendingCountdown, 100);
-}
-
 function updateStartCountdown(session) {
   const isCurrent = Boolean(state.currentSessionId) && session.session_id === state.currentSessionId;
 
   if (isCurrent && session.phase === "countdown") {
-    stopPendingCountdown();
     const value = String(Math.max(1, session.countdown_remaining || 1));
     if (startCountdown.textContent !== value) {
       startCountdown.textContent = value;
     }
     startCountdown.classList.remove("hidden");
-    return;
-  }
-
-  // Пока POST /start ещё создаёт публичную папку, не даём pollStatus
-  // прятать/показывать таймер каждые 250 мс — именно это давало мерцание.
-  if (state.pendingCountdownDeadline && !state.currentSessionId) {
-    renderPendingCountdown();
     return;
   }
 
@@ -233,6 +198,11 @@ function updateStartCountdown(session) {
 
 function updateSaveStatus(session) {
   const phase = session.phase;
+  if (phase === "preparing_motion") {
+    saveStatusText.textContent = "Подготовка манипулятора…";
+    saveStatus.classList.remove("hidden");
+    return;
+  }
   if (phase === "processing") {
     saveStatusText.textContent = "Видео сохраняется…";
     saveStatus.classList.remove("hidden");
@@ -264,7 +234,6 @@ captureButton.addEventListener("click", async () => {
   state.currentSessionId = null;
   captureButton.disabled = true;
   saveStatus.classList.add("hidden");
-  startPendingCountdown(5);
 
   try {
     const response = await jsonFetch(API.start, {
@@ -273,7 +242,6 @@ captureButton.addEventListener("click", async () => {
     });
     state.currentSessionId = response.session_id;
   } catch (error) {
-    stopPendingCountdown();
     state.busy = false;
     captureButton.disabled = false;
     startCountdown.classList.add("hidden");
@@ -295,7 +263,6 @@ function startQrCountdown() {
 }
 
 function showQr(sessionId) {
-  stopPendingCountdown();
   state.resultShown = true;
   state.busy = false;
   startCountdown.classList.add("hidden");
@@ -331,7 +298,6 @@ function showQr(sessionId) {
 }
 
 function resetUi() {
-  stopPendingCountdown();
   clearInterval(state.qrCountdownTimer);
   clearTimeout(state.resetTimer);
   state.qrCountdownTimer = null;
@@ -362,7 +328,7 @@ async function pollStatus() {
 
     updateSaveStatus(session);
 
-    const busyPhase = ["countdown", "recording", "processing", "preparing_share", "uploading", "waiting_upload"].includes(session.phase);
+    const busyPhase = ["preparing_motion", "countdown", "recording", "processing", "preparing_share", "uploading", "waiting_upload"].includes(session.phase);
     if (busyPhase) {
       state.busy = true;
       captureButton.disabled = true;
@@ -375,7 +341,6 @@ async function pollStatus() {
     }
 
     if (session.phase === "error") {
-      stopPendingCountdown();
       state.busy = false;
       state.currentSessionId = null;
       startCountdown.classList.add("hidden");

@@ -9,15 +9,16 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from .camera import CameraRecorder
+from .video_postprocess import apply_speed_intervals
 from .yandex_disk import YandexDiskClient
 
-TrajectoryExecutor = Callable[[str], bool]
+TrajectoryExecutor = Callable[[str, Callable[[], None], Callable[[], bool]], bool]
 
 
 class SessionManager:
     """Countdown -> record -> successful trajectory -> save -> create folder -> QR -> upload."""
 
-    BUSY_PHASES = {"preparing_share", "countdown", "recording", "processing"}
+    BUSY_PHASES = {"preparing_motion", "preparing_share", "countdown", "recording", "processing"}
 
     def __init__(
         self,
@@ -54,7 +55,11 @@ class SessionManager:
     def _is_busy(self) -> bool:
         return self._phase in self.BUSY_PHASES
 
-    def start(self, trajectory: Path) -> str:
+    def start(
+        self,
+        trajectory: Path,
+        speed_intervals: Optional[list[dict[str, float]]] = None,
+    ) -> str:
         with self._lock:
             if self._is_busy():
                 raise RuntimeError("Сессия уже запущена")
@@ -63,11 +68,9 @@ class SessionManager:
 
             session_id = uuid.uuid4().hex
             self._session_id = session_id
-            self._phase = "preparing_share"
+            self._phase = "preparing_motion"
             self._started_at = datetime.now().isoformat(timespec="seconds")
-            # Safety countdown starts immediately when the user presses the button.
-            # Yandex folder is intentionally NOT created yet.
-            self._countdown_deadline = time.monotonic() + self.countdown_seconds
+            self._countdown_deadline = None
             self._trajectory = trajectory.name
             self._video = None
             self._share_url = None
@@ -77,26 +80,22 @@ class SessionManager:
             self._upload_state = "idle"
             self._local_ready = False
             self._success = False
+            speed_intervals = speed_intervals or []
             self._stop_event.clear()
-
-        with self._lock:
-            if self._session_id != session_id:
-                raise RuntimeError("Сессия была заменена")
-            self._phase = "countdown"
 
         self._thread = threading.Thread(
             target=self._run,
-            args=(session_id, trajectory.name),
+            args=(session_id, trajectory.name, speed_intervals),
             daemon=True,
         )
         self._thread.start()
         return session_id
 
-    def _wait_countdown(self) -> bool:
+    def _wait_countdown(self, session_id: str) -> bool:
         while True:
-            if self._stop_event.is_set():
-                return False
             with self._lock:
+                if self._session_id != session_id or self._stop_event.is_set():
+                    return False
                 deadline = self._countdown_deadline
             if deadline is None:
                 return True
@@ -105,12 +104,13 @@ class SessionManager:
                 return True
             time.sleep(min(0.05, remaining))
 
-    def _finish_recording(self) -> Path:
+    def _finish_recording(self, speed_intervals: list[dict[str, float]]) -> Path:
         with self._lock:
             self._phase = "processing"
         video_path = self.camera.stop_recording()
         if not video_path or not video_path.exists():
             raise RuntimeError("Видео не было создано")
+        apply_speed_intervals(video_path, speed_intervals)
         with self._lock:
             self._local_ready = True
         return video_path
@@ -148,22 +148,91 @@ class SessionManager:
                 first_attempt = False
                 time.sleep(5.0)
 
-    def _execute_trajectory_with_timeout(self, trajectory_name: str) -> tuple[bool, str]:
-        """Run the manipulator while limiting how long the camera may record."""
-        result_queue: queue.Queue = queue.Queue(maxsize=1)
+    def _execute_trajectory_with_timeout(
+        self,
+        session_id: str,
+        trajectory_name: str,
+    ) -> tuple[bool, str]:
+        """Wait for robot readiness, record, then release its first motion command."""
+        result_queue: queue.Queue = queue.Queue()
+        motion_gate = threading.Event()
+        abort_gate = threading.Event()
 
         def worker() -> None:
             try:
-                ok = bool(self.trajectory_executor(trajectory_name))
+                ok = bool(self.trajectory_executor(
+                    trajectory_name,
+                    on_motion_ready=lambda: result_queue.put(("ready", None)),
+                    wait_for_motion_start=lambda: self._wait_motion_gate(
+                        session_id,
+                        motion_gate,
+                        abort_gate,
+                    ),
+                ))
                 result_queue.put(("ok", ok))
             except Exception as exc:
                 result_queue.put(("error", exc))
 
         threading.Thread(target=worker, daemon=True).start()
 
+        deadline = time.monotonic() + self.max_video_seconds
+        ready_result = None
+        while not self._stop_event.is_set():
+            with self._lock:
+                if self._session_id != session_id:
+                    break
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            try:
+                ready_result = result_queue.get(timeout=min(0.1, remaining))
+                break
+            except queue.Empty:
+                continue
+
+        if ready_result is None:
+            abort_gate.set()
+            motion_gate.set()
+            if self._stop_event.is_set():
+                return False, "Съёмка отменена"
+            return False, "Манипулятор не подготовил движение вовремя"
+        kind, value = ready_result
+
+        if kind == "error":
+            return False, f"Ошибка манипулятора: {value}"
+        if kind != "ready":
+            return False, "Манипулятор завершил программу без сигнала начала движения"
+
+        with self._lock:
+            if self._session_id != session_id or self._stop_event.is_set():
+                abort_gate.set()
+                motion_gate.set()
+                return False, "Съёмка отменена"
+            self._countdown_deadline = time.monotonic() + self.countdown_seconds
+            self._phase = "countdown"
+
+        if not self._wait_countdown(session_id):
+            abort_gate.set()
+            motion_gate.set()
+            return False, "Съёмка отменена"
+
+        try:
+            video_path = self.camera.start_recording()
+        except Exception:
+            abort_gate.set()
+            motion_gate.set()
+            raise
+
+        with self._lock:
+            self._video = video_path.name
+            self._countdown_deadline = None
+            self._phase = "recording"
+
+        motion_gate.set()
         try:
             kind, value = result_queue.get(timeout=self.max_video_seconds)
         except queue.Empty:
+            abort_gate.set()
             return False, f"Максимальная длина видео {self.max_video_seconds:g} с достигнута"
 
         if kind == "error":
@@ -172,30 +241,46 @@ class SessionManager:
             return False, "Манипулятор не завершил траекторию"
         return True, ""
 
+    def _wait_motion_gate(
+        self,
+        session_id: str,
+        motion_gate: threading.Event,
+        abort_gate: threading.Event,
+    ) -> bool:
+        while not motion_gate.wait(0.1):
+            with self._lock:
+                session_changed = self._session_id != session_id
+            if session_changed or self._stop_event.is_set() or abort_gate.is_set():
+                return False
+        with self._lock:
+            session_changed = self._session_id != session_id
+        return not session_changed and not self._stop_event.is_set() and not abort_gate.is_set()
+
     def _run(
         self,
         session_id: str,
         trajectory_name: str,
+        speed_intervals: list[dict[str, float]],
     ) -> None:
         try:
-            if not self._wait_countdown():
-                raise RuntimeError("Съёмка отменена")
+            with self._lock:
+                if self._session_id != session_id:
+                    return
+
+            movement_ok, movement_error = self._execute_trajectory_with_timeout(
+                session_id,
+                trajectory_name,
+            )
 
             with self._lock:
                 if self._session_id != session_id:
                     return
-                self._countdown_deadline = None
-                self._phase = "recording"
 
-            video_path = self.camera.start_recording()
-            with self._lock:
-                self._video = video_path.name
-
-            movement_ok, movement_error = self._execute_trajectory_with_timeout(trajectory_name)
-
-            # MP4 финализируем в любом случае: при False, исключении или таймауте
-            # локальное видео остаётся на ноутбуке.
-            video_path = self._finish_recording()
+            if self.camera.status().get("recording"):
+                # Finalize even on failure/timeout so the local video is retained.
+                video_path = self._finish_recording(speed_intervals)
+            else:
+                video_path = None
 
             if not movement_ok:
                 with self._lock:
@@ -205,6 +290,9 @@ class SessionManager:
                     self._phase = "error"
                     self._error = movement_error
                 return
+
+            if video_path is None:
+                raise RuntimeError("Видео не было создано")
 
             # Папка на Яндекс.Диске создаётся ТОЛЬКО после успешной траектории.
             with self._lock:
