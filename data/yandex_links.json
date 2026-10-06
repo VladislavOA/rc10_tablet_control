@@ -188,5 +188,87 @@
     "public_url": "https://yadi.sk/d/0HUAk7ZmJdufGw",
     "remote_folder": "/RC10/videos/17e61204a6274b18b1c0b220951b14da",
     "session_id": "17e61204a6274b18b1c0b220951b14da"
+  },
+  "session:14dd1e2bc4dd490792dc867eefbf7e1d": {
+    "public_url": "https://yadi.sk/d/D6Sj_mPfSiloRQ",
+    "remote_folder": "/RC10/videos/14dd1e2bc4dd490792dc867eefbf7e1d",
+    "session_id": "14dd1e2bc4dd490792dc867eefbf7e1d"
+  },
+  "session:c098dc106beb49768dfacafe77161332": {
+    "public_url": "https://yadi.sk/d/2BJR5ZRWSdR0tw",
+    "remote_folder": "/RC10/videos/c098dc106beb49768dfacafe77161332",
+    "session_id": "c098dc106beb49768dfacafe77161332"
+  },
+  "session:f486c35a907146ffb23d6f3eead20d48": {
+    "public_url": "https://yadi.sk/d/7yTXIKITJldS8g",
+    "remote_folder": "/RC10/videos/f486c35a907146ffb23d6f3eead20d48",
+    "session_id": "f486c35a907146ffb23d6f3eead20d48"
+  },
+  "rc10_2026-10-05_14-27-36.mp4": {
+    "public_url": "https://yadi.sk/d/7yTXIKITJldS8g",
+    "remote_folder": "/RC10/videos/f486c35a907146ffb23d6f3eead20d48",
+    "remote_path": "/RC10/videos/f486c35a907146ffb23d6f3eead20d48/video.mp4",
+    "remote_name": "video.mp4",
+    "size": 12049766
+  },
+  "session:0570fad30ee54945a0157dacacff1d0a": {
+    "public_url": "https://yadi.sk/d/wtQwh_D-NpZVkg",
+    "remote_folder": "/RC10/videos/0570fad30ee54945a0157dacacff1d0a",
+    "session_id": "0570fad30ee54945a0157dacacff1d0a"
+  },
+  "rc10_2026-10-05_16-16-06.mp4": {
+    "public_url": "https://yadi.sk/d/wtQwh_D-NpZVkg",
+    "remote_folder": "/RC10/videos/0570fad30ee54945a0157dacacff1d0a",
+    "remote_path": "/RC10/videos/0570fad30ee54945a0157dacacff1d0a/video.mp4",
+    "remote_name": "video.mp4",
+    "size": 12057414
+  },
+  "session:029acb151dda4268bbe6fd344535b84f": {
+    "public_url": "https://yadi.sk/d/U8sXE2n0bHl55w",
+    "remote_folder": "/RC10/videos/029acb151dda4268bbe6fd344535b84f",
+    "session_id": "029acb151dda4268bbe6fd344535b84f"
+  },
+  "rc10_2026-10-05_16-18-06.mp4": {
+    "public_url": "https://yadi.sk/d/U8sXE2n0bHl55w",
+    "remote_folder": "/RC10/videos/029acb151dda4268bbe6fd344535b84f",
+    "remote_path": "/RC10/videos/029acb151dda4268bbe6fd344535b84f/video.mp4",
+    "remote_name": "video.mp4",
+    "size": 12620327
+  },
+  "session:5db8f7de41374de49af0b82af86c66da": {
+    "public_url": "https://yadi.sk/d/sQ4sbC1F4eKjyw",
+    "remote_folder": "/RC10/videos/5db8f7de41374de49af0b82af86c66da",
+    "session_id": "5db8f7de41374de49af0b82af86c66da"
+  },
+  "rc10_2026-10-05_16-34-40.mp4": {
+    "public_url": "https://yadi.sk/d/sQ4sbC1F4eKjyw",
+    "remote_folder": "/RC10/videos/5db8f7de41374de49af0b82af86c66da",
+    "remote_path": "/RC10/videos/5db8f7de41374de49af0b82af86c66da/video.mp4",
+    "remote_name": "video.mp4",
+    "size": 9526411
+  },
+  "session:14708be46f664aebb939f5e372aced44": {
+    "public_url": "https://yadi.sk/d/BQJy-WtedDAZog",
+    "remote_folder": "/RC10/videos/14708be46f664aebb939f5e372aced44",
+    "session_id": "14708be46f664aebb939f5e372aced44"
+  },
+  "rc10_2026-10-05_16-41-55.mp4": {
+    "public_url": "https://yadi.sk/d/BQJy-WtedDAZog",
+    "remote_folder": "/RC10/videos/14708be46f664aebb939f5e372aced44",
+    "remote_path": "/RC10/videos/14708be46f664aebb939f5e372aced44/video.mp4",
+    "remote_name": "video.mp4",
+    "size": 8852386
+  },
+  "session:dac8762415e04a2c992d2cc1d4435ae6": {
+    "public_url": "https://yadi.sk/d/XfFop_0RnN58oA",
+    "remote_folder": "/RC10/videos/dac8762415e04a2c992d2cc1d4435ae6",
+    "session_id": "dac8762415e04a2c992d2cc1d4435ae6"
+  },
+  "rc10_2026-10-05_18-14-47.mp4": {
+    "public_url": "https://yadi.sk/d/XfFop_0RnN58oA",
+    "remote_folder": "/RC10/videos/dac8762415e04a2c992d2cc1d4435ae6",
+    "remote_path": "/RC10/videos/dac8762415e04a2c992d2cc1d4435ae6/video.mp4",
+    "remote_name": "video.mp4",
+    "size": 9264695
   }
 }
