@@ -4,9 +4,9 @@ Minimal project for the RC10 tablet interface.
 
 Flow:
 1. Choose a trajectory from `data/trajectories/*.json`.
-2. Press the capture button to prepare the manipulator and validate the path.
-3. Once the robot signals that it is ready to move, a 5-second countdown is shown.
-4. Recording starts immediately before the first motion command is released.
+2. Press the capture button: the manipulator starts preparing and validating the path, and a 5-second countdown starts at the same time.
+3. When the countdown ends, recording starts immediately before the first motion command is released.
+4. If the robot is not ready by the end of the countdown, recording and motion start as soon as it is.
 5. If the stub returns `True`, recording is finalized and uploaded to Yandex Disk.
 6. Only the current session can display its QR code, which prevents an old QR from appearing immediately after a new press.
 

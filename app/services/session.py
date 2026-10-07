@@ -68,9 +68,10 @@ class SessionManager:
 
             session_id = uuid.uuid4().hex
             self._session_id = session_id
-            self._phase = "preparing_motion"
+            # The countdown and the manipulator preparation start together.
+            self._phase = "countdown"
             self._started_at = datetime.now().isoformat(timespec="seconds")
-            self._countdown_deadline = None
+            self._countdown_deadline = time.monotonic() + self.countdown_seconds
             self._trajectory = trajectory.name
             self._video = None
             self._share_url = None
@@ -90,19 +91,6 @@ class SessionManager:
         )
         self._thread.start()
         return session_id
-
-    def _wait_countdown(self, session_id: str) -> bool:
-        while True:
-            with self._lock:
-                if self._session_id != session_id or self._stop_event.is_set():
-                    return False
-                deadline = self._countdown_deadline
-            if deadline is None:
-                return True
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                return True
-            time.sleep(min(0.05, remaining))
 
     def _finish_recording(self, speed_intervals: list[dict[str, float]]) -> Path:
         with self._lock:
@@ -153,7 +141,7 @@ class SessionManager:
         session_id: str,
         trajectory_name: str,
     ) -> tuple[bool, str]:
-        """Wait for robot readiness, record, then release its first motion command."""
+        """Prepare the robot during the countdown, record, then release its first motion command."""
         result_queue: queue.Queue = queue.Queue()
         motion_gate = threading.Event()
         abort_gate = threading.Event()
@@ -175,25 +163,43 @@ class SessionManager:
 
         threading.Thread(target=worker, daemon=True).start()
 
+        # The countdown started with the button press and runs while the robot
+        # prepares; motion and recording begin once both have finished.
         deadline = time.monotonic() + self.max_video_seconds
         ready_result = None
-        while not self._stop_event.is_set():
+        cancelled = False
+        while True:
             with self._lock:
-                if self._session_id != session_id:
+                if self._session_id != session_id or self._stop_event.is_set():
+                    cancelled = True
                     break
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                break
-            try:
-                ready_result = result_queue.get(timeout=min(0.1, remaining))
-                break
-            except queue.Empty:
+                countdown_deadline = self._countdown_deadline
+            now = time.monotonic()
+            countdown_left = 0.0 if countdown_deadline is None else countdown_deadline - now
+
+            if ready_result is None:
+                if now >= deadline:
+                    break
+                try:
+                    ready_result = result_queue.get(timeout=0.05)
+                except queue.Empty:
+                    if countdown_left <= 0:
+                        with self._lock:
+                            if self._session_id == session_id and self._phase == "countdown":
+                                self._phase = "preparing_motion"
+                    continue
+                if ready_result[0] != "ready":
+                    break
                 continue
 
-        if ready_result is None:
+            if countdown_left <= 0:
+                break
+            time.sleep(min(0.05, countdown_left))
+
+        if cancelled or ready_result is None:
             abort_gate.set()
             motion_gate.set()
-            if self._stop_event.is_set():
+            if cancelled:
                 return False, "Съёмка отменена"
             return False, "Манипулятор не подготовил движение вовремя"
         kind, value = ready_result
@@ -202,19 +208,6 @@ class SessionManager:
             return False, f"Ошибка манипулятора: {value}"
         if kind != "ready":
             return False, "Манипулятор завершил программу без сигнала начала движения"
-
-        with self._lock:
-            if self._session_id != session_id or self._stop_event.is_set():
-                abort_gate.set()
-                motion_gate.set()
-                return False, "Съёмка отменена"
-            self._countdown_deadline = time.monotonic() + self.countdown_seconds
-            self._phase = "countdown"
-
-        if not self._wait_countdown(session_id):
-            abort_gate.set()
-            motion_gate.set()
-            return False, "Съёмка отменена"
 
         try:
             video_path = self.camera.start_recording()
