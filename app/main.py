@@ -66,7 +66,19 @@ session = SessionManager(
     max_video_seconds=MAX_VIDEO_SECONDS,
 )
 
-app.mount("/static", StaticFiles(directory=BASE_DIR / "app" / "static"), name="static")
+# The tablet (especially as a home-screen app) must revalidate the UI files,
+# otherwise it keeps showing a stale page after an update.
+NO_CACHE_HEADERS = {"Cache-Control": "no-cache"}
+
+
+class RevalidatedStaticFiles(StaticFiles):
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers.update(NO_CACHE_HEADERS)
+        return response
+
+
+app.mount("/static", RevalidatedStaticFiles(directory=BASE_DIR / "app" / "static"), name="static")
 
 
 class StartRequest(BaseModel):
@@ -80,7 +92,7 @@ def startup():
 
 @app.get("/")
 def index():
-    return FileResponse(BASE_DIR / "app" / "static" / "index.html")
+    return FileResponse(BASE_DIR / "app" / "static" / "index.html", headers=NO_CACHE_HEADERS)
 
 
 @app.get("/api/status")
