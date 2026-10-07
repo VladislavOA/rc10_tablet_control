@@ -14,6 +14,11 @@ VIDEO_WIDTH = int(os.getenv("VIDEO_WIDTH", "1280"))
 VIDEO_HEIGHT = int(os.getenv("VIDEO_HEIGHT", "720"))
 VIDEO_ROTATION = int(os.getenv("VIDEO_ROTATION", "90")) % 360
 
+# Mode requested from the capture device. Empty size = derived from VIDEO_*.
+CAPTURE_WIDTH = int(os.getenv("CAPTURE_WIDTH", "0") or 0)
+CAPTURE_HEIGHT = int(os.getenv("CAPTURE_HEIGHT", "0") or 0)
+CAPTURE_FOURCC = os.getenv("CAPTURE_FOURCC", "MJPG").strip().upper()
+
 PREVIEW_WIDTH = int(os.getenv("PREVIEW_WIDTH", "360"))
 PREVIEW_HEIGHT = int(os.getenv("PREVIEW_HEIGHT", "640"))
 PREVIEW_FPS = float(os.getenv("PREVIEW_FPS", "20"))

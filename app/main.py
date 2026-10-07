@@ -11,6 +11,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .config import (
+    CAPTURE_FOURCC,
+    CAPTURE_HEIGHT,
+    CAPTURE_WIDTH,
     BASE_DIR,
     CAMERA_INDEX,
     CAMERA_SOURCE,
@@ -50,6 +53,9 @@ camera = CameraRecorder(
     PREVIEW_FPS,
     PREVIEW_JPEG_QUALITY,
     VIDEO_ROTATION,
+    capture_width=CAPTURE_WIDTH,
+    capture_height=CAPTURE_HEIGHT,
+    capture_fourcc=CAPTURE_FOURCC,
 )
 yandex = YandexDiskClient(YANDEX_DISK_TOKEN, YANDEX_DISK_DIR, YANDEX_LINKS_FILE)
 session = SessionManager(

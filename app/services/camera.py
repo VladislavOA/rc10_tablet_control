@@ -32,6 +32,9 @@ class CameraRecorder:
         preview_fps: float = 20,
         preview_jpeg_quality: int = 65,
         rotation: int = 90,
+        capture_width: int = 0,
+        capture_height: int = 0,
+        capture_fourcc: str = "MJPG",
     ):
         self.source = source
         self.video_dir = video_dir
@@ -45,6 +48,19 @@ class CameraRecorder:
         self.rotation = rotation % 360
         if self.rotation not in (0, 90, 180, 270):
             raise ValueError("VIDEO_ROTATION должен быть 0, 90, 180 или 270")
+        if capture_fourcc and len(capture_fourcc) != 4:
+            raise ValueError("CAPTURE_FOURCC должен состоять из 4 символов, например MJPG или YUYV")
+
+        # The sensor is landscape; rotation is applied after capture, so a
+        # portrait size in the config means the rotated output size.
+        self._sensor_size = (width, height)
+        if self.rotation in (90, 270) and width < height:
+            self._sensor_size = (height, width)
+        self.capture_width = capture_width or self._sensor_size[0]
+        self.capture_height = capture_height or self._sensor_size[1]
+        self.capture_fourcc = capture_fourcc
+        self._capture_mode: Optional[dict] = None
+        self._measured_fps = 0.0
 
         self._cap = None
         self._writer = None
@@ -85,17 +101,42 @@ class CameraRecorder:
             return False
 
         if not (isinstance(self.source, str) and self.source):
-            # USB camera: request MJPEG from the device to reduce USB bandwidth.
-            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+            # The pixel format decides which sizes and frame rates the device offers.
+            if self.capture_fourcc:
+                cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*self.capture_fourcc))
+            self._disable_dynamic_framerate()
 
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.capture_width)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.capture_height)
         cap.set(cv2.CAP_PROP_FPS, self.fps)
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        # A single V4L2 buffer makes the driver drop every other frame.
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 2)
+
+        fourcc = int(cap.get(cv2.CAP_PROP_FOURCC))
+        self._capture_mode = {
+            "width": int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+            "height": int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
+            "fps": cap.get(cv2.CAP_PROP_FPS),
+            "fourcc": fourcc.to_bytes(4, "little").decode("ascii", "replace") if fourcc > 0 else "",
+        }
 
         self._cap = cap
         self._error = None
         return True
+
+    def _disable_dynamic_framerate(self) -> None:
+        """Stop the camera from lowering its FPS to lengthen exposure in low light."""
+        v4l2_ctl = shutil.which("v4l2-ctl")
+        if not v4l2_ctl:
+            return
+        try:
+            subprocess.run(
+                [v4l2_ctl, "-d", f"/dev/video{int(self.source)}", "-c", "exposure_dynamic_framerate=0"],
+                capture_output=True,
+                timeout=2,
+            )
+        except Exception:
+            pass
 
     def _reset_capture(self):
         cap = self._cap
@@ -115,7 +156,12 @@ class CameraRecorder:
 
 
     def _orient_frame(self, frame):
-        """Rotate camera frames before both preview and recording."""
+        """Scale and rotate camera frames before both preview and recording."""
+        height, width = frame.shape[:2]
+        out_w, out_h = self._sensor_size
+        # Only scale when the aspect ratio matches, otherwise keep the frame as is.
+        if (width, height) != (out_w, out_h) and abs(width * out_h - height * out_w) <= max(width, height):
+            frame = cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_LINEAR)
         if self.rotation == 90:
             return cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
         if self.rotation == 180:
@@ -143,6 +189,7 @@ class CameraRecorder:
     def _loop(self):
         preview_interval = 1.0 / self.preview_fps
         next_preview_at = 0.0
+        last_frame_at: Optional[float] = None
 
         while not self._stop.is_set():
             if not self._ensure_camera():
@@ -160,6 +207,10 @@ class CameraRecorder:
             frame = self._orient_frame(frame)
 
             now = time.monotonic()
+            if last_frame_at is not None and now > last_frame_at:
+                instant_fps = 1.0 / (now - last_frame_at)
+                self._measured_fps += 0.05 * (instant_fps - self._measured_fps)
+            last_frame_at = now
             with self._lock:
                 self._latest_frame = frame
                 record_queue = self._record_queue
@@ -175,31 +226,32 @@ class CameraRecorder:
                 next_preview_at = now + preview_interval
 
             if recording and record_queue is not None and started_at is not None:
-                elapsed = max(0.0, now - started_at)
-                target_frames = int(elapsed * self.fps) + 1
+                # Every captured frame is written exactly once; the real frame
+                # rate is measured and applied when the MP4 is finalized.
                 with self._lock:
                     if not self._recording or self._record_queue is not record_queue:
                         continue
-                    missing = target_frames - self._written_frames
-                    if missing > 0:
-                        missing = min(missing, max(int(self.fps * 2), 1))
+                    missing = 1
+                    try:
+                        record_queue.put_nowait((frame.copy(), missing))
+                    except queue.Full:
+                        # Writer is behind: replace the oldest queued frame and
+                        # repeat this one in its place to keep the timing.
+                        self._dropped_record_batches += 1
+                        try:
+                            _, dropped_repeats = record_queue.get_nowait()
+                            missing += dropped_repeats
+                            self._written_frames -= dropped_repeats
+                        except queue.Empty:
+                            pass
                         try:
                             record_queue.put_nowait((frame.copy(), missing))
                         except queue.Full:
-                            try:
-                                _, dropped_repeats = record_queue.get_nowait()
-                                missing += dropped_repeats
-                            except queue.Empty:
-                                pass
-                            try:
-                                record_queue.put_nowait((frame.copy(), missing))
-                            except queue.Full:
-                                self._dropped_record_batches += 1
-                            else:
-                                self._written_frames += missing
-                                self._dropped_record_batches += 1
+                            pass
                         else:
                             self._written_frames += missing
+                    else:
+                        self._written_frames += missing
 
     def _write_recording(self, writer, record_queue: queue.Queue) -> None:
         try:
@@ -271,13 +323,14 @@ class CameraRecorder:
             self._writer_thread.start()
         return final_path
 
-    def _finalize_mp4(self, temp_path: Path, final_path: Path) -> None:
+    def _finalize_mp4(self, temp_path: Path, final_path: Path, fps: float) -> None:
         ffmpeg = shutil.which("ffmpeg")
         if not ffmpeg:
             raise RuntimeError("Для корректного MP4 нужен ffmpeg: sudo apt install ffmpeg")
 
         cmd = [
             ffmpeg, "-y", "-loglevel", "error",
+            "-r", f"{fps:.3f}",
             "-i", str(temp_path),
             "-an",
             "-c:v", "libx264",
@@ -297,6 +350,9 @@ class CameraRecorder:
     def stop_recording(self) -> Optional[Path]:
         with self._lock:
             self._recording = False
+            started_at = self._record_started_at
+            stopped_at = time.monotonic()
+            written_frames = self._written_frames
             writer = self._writer
             self._writer = None
             record_queue = self._record_queue
@@ -320,7 +376,12 @@ class CameraRecorder:
             raise RuntimeError(f"Ошибка записи видео: {writer_error}")
 
         if final_path and temp_path and temp_path.exists():
-            self._finalize_mp4(temp_path, final_path)
+            fps = self.fps
+            if started_at is not None and written_frames > 1:
+                elapsed = stopped_at - started_at
+                if elapsed > 0:
+                    fps = min(max(written_frames / elapsed, 1.0), 240.0)
+            self._finalize_mp4(temp_path, final_path, fps)
         return final_path
 
     def status(self) -> dict:
@@ -333,6 +394,8 @@ class CameraRecorder:
             "record_queue_size": record_queue_size,
             "dropped_record_batches": self._dropped_record_batches,
             "writer_error": self._writer_error,
+            "capture": self._capture_mode,
+            "measured_fps": round(self._measured_fps, 1),
             "preview": {
                 "width": self.preview_width,
                 "height": self.preview_height,
